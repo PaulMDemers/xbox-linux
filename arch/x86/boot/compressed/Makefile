@@ -44,6 +44,11 @@ KBUILD_CFLAGS += -D__DISABLE_EXPORTS
 KBUILD_CFLAGS += $(call cc-option,-Wa$(comma)-mrelax-relocations=no)
 KBUILD_CFLAGS += -include $(srctree)/include/linux/hidden.h
 
+ifdef CONFIG_X86_XBOX
+# Newer v1.1+ Xbox consoles crash while decompressing an optimized kernel.
+CFLAGS_misc.o := -O0
+endif
+
 # sev-decode-insn.c indirectly includes inat-table.c which is generated during
 # compilation and stored in $(objtree). Add the directory to the includes so
 # that the compiler finds it even with out-of-tree builds (make O=/some/path).

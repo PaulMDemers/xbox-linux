@@ -20,6 +20,10 @@
 #include "tick-internal.h"
 #include "timekeeping_internal.h"
 
+#ifdef CONFIG_X86_XBOX
+#include <linux/xbox.h>
+#endif
+
 static void clocksource_enqueue(struct clocksource *cs);
 
 static noinline u64 cycles_to_nsec_safe(struct clocksource *cs, u64 start, u64 end)
@@ -1100,6 +1104,10 @@ static void clocksource_select_fallback(void)
 static int __init clocksource_done_booting(void)
 {
 	mutex_lock(&clocksource_mutex);
+#ifdef CONFIG_X86_XBOX
+	if (!override_name[0] && machine_is_xbox())
+		strscpy(override_name, "pit", sizeof(override_name));
+#endif
 	curr_clocksource = clocksource_default_clock();
 	finished_booting = 1;
 	/*
