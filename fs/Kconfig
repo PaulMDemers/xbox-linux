@@ -44,6 +44,7 @@ config FS_MBCACHE
 	default m if EXT2_FS_XATTR || EXT4_FS
 
 source "fs/jfs/Kconfig"
+source "fs/fatx/Kconfig"
 
 source "fs/xfs/Kconfig"
 source "fs/gfs2/Kconfig"
