@@ -578,7 +578,6 @@ config X86_EXTENDED_PLATFORM
 config X86_XBOX
 	bool "Xbox (Microsoft)"
 	depends on X86_32
-	depends on X86_EXTENDED_PLATFORM
 	help
 	  Xbox is a standard PC from Microsoft minus some legacy hardware.
 

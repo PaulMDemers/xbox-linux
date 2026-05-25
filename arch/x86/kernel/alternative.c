@@ -2364,7 +2364,9 @@ void __init alternative_instructions(void)
 {
 	u64 ibt;
 
+#ifndef CONFIG_X86_XBOX
 	int3_selftest();
+#endif
 
 	/*
 	 * The patching is not fully atomic, so try to avoid local
