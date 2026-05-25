@@ -130,8 +130,19 @@ static u32 fatx_file_cluster(struct inode *inode, sector_t iblock)
 {
 	struct super_block *sb = inode->i_sb;
 	struct fatx_sb_info *sbi = fatx_sb(sb);
+	struct fatx_inode_info *fi = fatx_i(inode);
 	u32 index = iblock >> sbi->cluster_block_bits;
-	u32 cluster = fatx_i(inode)->start_cluster;
+	u32 cluster = fi->start_cluster;
+
+	if (index >= fi->cluster_count)
+		return 0;
+
+	if (fi->contiguous) {
+		cluster += index;
+		if (cluster < FATX_ROOT_CLUSTER || cluster >= sbi->cluster_count)
+			return 0;
+		return cluster;
+	}
 
 	while (index-- && cluster)
 		cluster = fatx_next_cluster(sb, cluster);
@@ -169,6 +180,51 @@ const struct address_space_operations fatx_aops = {
 	.bmap = fatx_bmap,
 };
 
+static u32 fatx_cluster_count_for_size(struct super_block *sb, loff_t size)
+{
+	struct fatx_sb_info *sbi = fatx_sb(sb);
+	u64 clusters;
+
+	if (size <= 0)
+		return 0;
+
+	clusters = ((u64)size + sbi->cluster_size - 1) >> sbi->cluster_bits;
+	if (clusters > sbi->cluster_count)
+		return sbi->cluster_count;
+	return (u32)clusters;
+}
+
+static bool fatx_chain_is_contiguous(struct super_block *sb,
+				     u32 start_cluster, u32 cluster_count)
+{
+	struct fatx_sb_info *sbi = fatx_sb(sb);
+	u32 cluster = start_cluster;
+	u32 index;
+
+	if (!cluster_count)
+		return false;
+	if (start_cluster < FATX_ROOT_CLUSTER ||
+	    start_cluster >= sbi->cluster_count)
+		return false;
+	if (cluster_count == 1)
+		return true;
+
+	for (index = 1; index < cluster_count; index++) {
+		u32 expected = cluster + 1;
+		u32 next;
+
+		if (expected >= sbi->cluster_count)
+			return false;
+
+		next = fatx_next_cluster(sb, cluster);
+		if (next != expected)
+			return false;
+		cluster = next;
+	}
+
+	return true;
+}
+
 struct inode *fatx_iget(struct super_block *sb, u32 start_cluster, u32 attr,
 			loff_t size)
 {
@@ -185,7 +241,11 @@ struct inode *fatx_iget(struct super_block *sb, u32 start_cluster, u32 attr,
 
 	fi = fatx_i(inode);
 	fi->start_cluster = start_cluster;
+	fi->cluster_count = fatx_cluster_count_for_size(sb, size);
 	fi->attr = attr;
+	fi->contiguous = !(attr & FATX_ATTR_DIR) &&
+			 fatx_chain_is_contiguous(sb, start_cluster,
+						  fi->cluster_count);
 
 	i_uid_write(inode, 0);
 	i_gid_write(inode, 0);

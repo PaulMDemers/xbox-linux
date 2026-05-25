@@ -34,7 +34,9 @@ struct fatx_sb_info {
 
 struct fatx_inode_info {
 	u32 start_cluster;
+	u32 cluster_count;
 	u32 attr;
+	bool contiguous;
 	struct inode vfs_inode;
 };
 
