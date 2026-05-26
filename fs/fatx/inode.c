@@ -7,6 +7,7 @@
 #include <linux/mpage.h>
 #include <linux/slab.h>
 #include <linux/statfs.h>
+#include <linux/uio.h>
 
 #include "fatx.h"
 
@@ -158,16 +159,41 @@ static int fatx_get_block(struct inode *inode, sector_t iblock,
 	sector_t offset;
 
 	if (!cluster)
-		return 0;
+		return create ? -EIO : 0;
 
 	offset = iblock & (sbi->cluster_blocks - 1);
 	map_bh(bh, sb, fatx_cluster_block(sb, cluster) + offset);
 	return 0;
 }
 
+static int fatx_writepages(struct address_space *mapping,
+			   struct writeback_control *wbc)
+{
+	return mpage_writepages(mapping, wbc, fatx_get_block);
+}
+
 static int fatx_read_folio(struct file *file, struct folio *folio)
 {
 	return block_read_full_folio(folio, fatx_get_block);
+}
+
+static void fatx_readahead(struct readahead_control *rac)
+{
+	mpage_readahead(rac, fatx_get_block);
+}
+
+static int fatx_write_begin(const struct kiocb *iocb,
+			    struct address_space *mapping,
+			    loff_t pos, unsigned int len,
+			    struct folio **foliop, void **fsdata)
+{
+	struct inode *inode = mapping->host;
+
+	if (pos < 0 || pos > i_size_read(inode) ||
+	    len > i_size_read(inode) - pos)
+		return -EFBIG;
+
+	return block_write_begin(mapping, pos, len, foliop, fatx_get_block);
 }
 
 static sector_t fatx_bmap(struct address_space *mapping, sector_t block)
@@ -176,8 +202,41 @@ static sector_t fatx_bmap(struct address_space *mapping, sector_t block)
 }
 
 const struct address_space_operations fatx_aops = {
+	.dirty_folio = block_dirty_folio,
+	.invalidate_folio = block_invalidate_folio,
 	.read_folio = fatx_read_folio,
+	.readahead = fatx_readahead,
+	.writepages = fatx_writepages,
+	.write_begin = fatx_write_begin,
+	.write_end = generic_write_end,
+	.migrate_folio = buffer_migrate_folio,
 	.bmap = fatx_bmap,
+	.direct_IO = noop_direct_IO,
+};
+
+static ssize_t fatx_write_iter(struct kiocb *iocb, struct iov_iter *from)
+{
+	struct inode *inode = file_inode(iocb->ki_filp);
+	loff_t pos = iocb->ki_pos;
+	loff_t size = i_size_read(inode);
+	size_t count = iov_iter_count(from);
+
+	if (!count)
+		return 0;
+	if (pos < 0 || pos >= size || count > size - pos)
+		return -EFBIG;
+
+	return generic_file_write_iter(iocb, from);
+}
+
+static const struct file_operations fatx_file_operations = {
+	.llseek = generic_file_llseek,
+	.read_iter = generic_file_read_iter,
+	.write_iter = fatx_write_iter,
+	.mmap_prepare = generic_file_mmap_prepare,
+	.fsync = generic_file_fsync,
+	.splice_read = filemap_splice_read,
+	.splice_write = iter_file_splice_write,
 };
 
 static u32 fatx_cluster_count_for_size(struct super_block *sb, loff_t size)
@@ -263,7 +322,8 @@ struct inode *fatx_iget(struct super_block *sb, u32 start_cluster, u32 attr,
 		inode->i_mode = S_IFREG | 0644;
 		set_nlink(inode, 1);
 		inode->i_size = size;
-		inode->i_fop = &generic_ro_fops;
+		inode->i_fop = sb_rdonly(sb) ? &generic_ro_fops :
+				 &fatx_file_operations;
 		inode->i_data.a_ops = &fatx_aops;
 	}
 	inode->i_blocks = (inode->i_size + 511) >> 9;
@@ -337,7 +397,6 @@ static int fatx_fill_super(struct super_block *sb, struct fs_context *fc)
 	sb->s_magic = FATX_SUPER_MAGIC;
 	sb->s_op = &fatx_sops;
 	sb->s_maxbytes = MAX_LFS_FILESIZE;
-	sb->s_flags |= SB_RDONLY;
 
 	root = fatx_iget(sb, FATX_ROOT_CLUSTER, FATX_ATTR_DIR,
 			 sbi->cluster_size);
@@ -353,7 +412,8 @@ static int fatx_fill_super(struct super_block *sb, struct fs_context *fc)
 		return -ENOMEM;
 	}
 
-	pr_info("FATX-fs: mounted read-only, cluster_size=%u clusters=%u\n",
+	pr_info("FATX-fs: mounted %s, cluster_size=%u clusters=%u\n",
+		sb_rdonly(sb) ? "read-only" : "read-write-existing",
 		sbi->cluster_size, sbi->cluster_count);
 	return 0;
 }
@@ -365,7 +425,6 @@ static int fatx_get_tree(struct fs_context *fc)
 
 static int fatx_reconfigure(struct fs_context *fc)
 {
-	fc->sb_flags |= SB_RDONLY;
 	return 0;
 }
 
@@ -420,4 +479,4 @@ module_exit(fatx_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("OpenAI");
-MODULE_DESCRIPTION("Read-only original Xbox FATX filesystem");
+MODULE_DESCRIPTION("Original Xbox FATX filesystem");

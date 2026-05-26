@@ -5,7 +5,9 @@ config FATX_FS
 	depends on BLOCK
 	select BUFFER_HEAD
 	help
-	  Read-only support for the original Xbox FATX filesystem.
+	  Minimal support for the original Xbox FATX filesystem.
 
 	  This is intended for bootstrapping Linux from files copied to the
-	  Xbox E: partition, such as a loop-mounted ext2 root image.
+	  Xbox E: partition, such as a loop-mounted ext2 root image.  The
+	  write path can overwrite data inside existing files, but it cannot
+	  create, delete, rename, extend, or allocate FATX files.
