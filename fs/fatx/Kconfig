@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config FATX_FS
+	tristate "Xbox FATX filesystem support"
+	depends on BLOCK
+	select BUFFER_HEAD
+	help
+	  Read-only support for the original Xbox FATX filesystem.
+
+	  This is intended for bootstrapping Linux from files copied to the
+	  Xbox E: partition, such as a loop-mounted ext2 root image.

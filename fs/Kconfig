@@ -33,6 +33,7 @@ config FS_MBCACHE
 
 source "fs/reiserfs/Kconfig"
 source "fs/jfs/Kconfig"
+source "fs/fatx/Kconfig"
 
 source "fs/xfs/Kconfig"
 source "fs/gfs2/Kconfig"
